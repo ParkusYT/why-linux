@@ -2,7 +2,9 @@ use std::thread::sleep;
 use std::time::Duration;
 use std::fs;
 
-#[derive(Debug)]
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
 pub struct MemSample {
     pub name: String,
     pub pid: u32,

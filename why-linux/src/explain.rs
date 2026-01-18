@@ -21,6 +21,18 @@ Sustained CPU usage here often indicates:
 • power management problems
 • hardware issues",
 
+        "disk" =>
+            "High filesystem usage can cause system slowness and prevent writes.
+Common causes:
+• logs or caches filling the root or application partitions
+• large backups or VM images stored on the same filesystem
+• leftover build artifacts or package caches
+
+Mitigation:
+• free space by cleaning caches (e.g. package cache) or rotating logs
+• move large files to another disk or expand the filesystem
+• consider adding separate partitions for var/tmp or adding more disk space",
+
         _ =>
             "Sustained high resource usage usually means a process is busy, leaking memory, or stuck.
 If this happens while idle, consider:
