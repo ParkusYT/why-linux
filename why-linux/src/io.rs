@@ -59,11 +59,34 @@ pub fn detect_sustained_high_io(
     let mut last_values: HashMap<u32, (u64, u64)> = HashMap::new();
     let mut last_seen: HashMap<u32, (u64, u64, String)> = HashMap::new();
 
+    // To avoid scanning every /proc pid on every sample (costly on systems with many processes),
+    // choose a candidate set of top-N pids by current total IO (read+write) and only sample those.
+    const TOP_N: usize = 64;
+
+    // pick initial candidates by a single scan
+    let mut candidates: Vec<u32> = Vec::new();
+    let mut totals: Vec<(u32, u64)> = Vec::new();
+    for pid in all_pids() {
+        if let Some((r, w)) = read_proc_io(pid) {
+            totals.push((pid, r.saturating_add(w)));
+        }
+    }
+
+    // sort descending by total bytes and keep top N
+    totals.sort_by(|a, b| b.1.cmp(&a.1));
+    for (pid, _) in totals.iter().take(TOP_N) {
+        candidates.push(*pid);
+    }
+
+    // Fallback: if no candidates found, scan all pids
+    if candidates.is_empty() {
+        candidates = all_pids();
+    }
+
     for _ in 0..samples {
-        // snapshot t0
-        let pids = all_pids();
+        // snapshot t0 for candidates
         last_values.clear();
-        for pid in &pids {
+        for pid in &candidates {
             if let Some((r, w)) = read_proc_io(*pid) {
                 last_values.insert(*pid, (r, w));
             }
@@ -71,9 +94,10 @@ pub fn detect_sustained_high_io(
 
         sleep(Duration::from_secs(1));
 
-        // snapshot t1 and compute deltas
-        for pid in pids {
-                if let (Some((r0, w0)), Some((r1, w1))) = (last_values.get(&pid), read_proc_io(pid)) {
+        // snapshot t1 and compute deltas for candidates
+        for pid in &candidates {
+            let pid = *pid;
+            if let (Some((r0, w0)), Some((r1, w1))) = (last_values.get(&pid), read_proc_io(pid)) {
                 let read_delta = r1.saturating_sub(*r0);
                 let write_delta = w1.saturating_sub(*w0);
 

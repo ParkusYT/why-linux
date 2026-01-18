@@ -76,10 +76,46 @@ fn main() {
 
     println!("Monitoring CPU + memory usage...\n");
 
-    let cpu_result = detect_sustained_high_cpu(args.cpu_threshold, args.cpu_samples, args.cpu_min_hits);
-    let mem_result = detect_sustained_high_mem(args.mem_threshold, args.mem_samples, args.mem_min_hits);
-    let disk_result = disk::detect_sustained_high_disk(args.disk_threshold, args.disk_samples, args.disk_min_hits);
-    let io_result = io::detect_sustained_high_io(args.io_read_threshold, args.io_write_threshold, args.io_samples, args.io_min_hits);
+    // Extract needed args so we can move them into threads.
+    let cpu_threshold = args.cpu_threshold;
+    let cpu_samples = args.cpu_samples;
+    let cpu_min_hits = args.cpu_min_hits;
+
+    let mem_threshold = args.mem_threshold;
+    let mem_samples = args.mem_samples;
+    let mem_min_hits = args.mem_min_hits;
+
+    let disk_threshold = args.disk_threshold;
+    let disk_samples = args.disk_samples;
+    let disk_min_hits = args.disk_min_hits;
+
+    let io_read_threshold = args.io_read_threshold;
+    let io_write_threshold = args.io_write_threshold;
+    let io_samples = args.io_samples;
+    let io_min_hits = args.io_min_hits;
+
+    // Run checks in parallel to avoid serial sleeps adding up.
+    let cpu_handle = std::thread::spawn(move || {
+        detect_sustained_high_cpu(cpu_threshold, cpu_samples, cpu_min_hits)
+    });
+
+    let mem_handle = std::thread::spawn(move || {
+        detect_sustained_high_mem(mem_threshold, mem_samples, mem_min_hits)
+    });
+
+    let disk_handle = std::thread::spawn(move || {
+        disk::detect_sustained_high_disk(disk_threshold, disk_samples, disk_min_hits)
+    });
+
+    let io_handle = std::thread::spawn(move || {
+        io::detect_sustained_high_io(io_read_threshold, io_write_threshold, io_samples, io_min_hits)
+    });
+
+    // Join results (if a thread panics we treat as no result)
+    let cpu_result = cpu_handle.join().ok().flatten();
+    let mem_result = mem_handle.join().ok().flatten();
+    let disk_result = disk_handle.join().ok().flatten();
+    let io_result = io_handle.join().ok().flatten();
 
     if args.json {
         let mut out = json!({});
