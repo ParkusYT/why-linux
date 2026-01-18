@@ -11,7 +11,7 @@ pub struct CpuSample {
     pub cpu: f32,
 }
 
-pub fn get_top_cpu() -> Option<CpuSample> {
+pub fn get_top_cpu_excluding(exclude_pid: Option<u32>) -> Option<CpuSample> {
     let output = std::process::Command::new("ps")
         .args(["-eo", "pid,comm,%cpu", "--sort=-%cpu"])
         .output()
@@ -21,23 +21,32 @@ pub fn get_top_cpu() -> Option<CpuSample> {
     let mut lines = stdout.lines();
     lines.next(); // skip header
 
-    let line = lines.next()?;
-    let mut parts = line.split_whitespace();
+    for line in lines {
+        let mut parts = line.split_whitespace();
+        let pid: u32 = parts.next()?.parse().ok()?;
+        let name = parts.next()?.to_string();
+        let cpu: f32 = parts.next()?.parse().ok()?;
 
-    let pid: u32 = parts.next()?.parse().ok()?;
-    let name = parts.next()?.to_string();
-    let cpu: f32 = parts.next()?.parse().ok()?;
-
-    let mut sample = CpuSample { name, pid, cpu };
-
-    // Check if this is a known browser child process
-    if sample.name == "Web" || sample.name == "GPU" {
-        if let Some(parent) = get_parent_process(sample.pid) {
-            sample = parent;
+        if exclude_pid.is_some_and(|p| p == pid) {
+            continue;
         }
+
+        let mut sample = CpuSample { name, pid, cpu };
+
+        // Check if this is a known browser child process
+        if sample.name == "Web" || sample.name == "GPU" {
+            if let Some(parent) = get_parent_process(sample.pid) {
+                if exclude_pid.is_some_and(|p| p == parent.pid) {
+                    continue;
+                }
+                sample = parent;
+            }
+        }
+
+        return Some(sample);
     }
 
-    Some(sample)
+    None
 }
 
 fn get_parent_process(pid: u32) -> Option<CpuSample> {
@@ -71,12 +80,13 @@ pub fn detect_sustained_high_cpu(
     threshold: f32,
     samples: usize,
     min_hits: usize,
+    exclude_pid: Option<u32>,
 ) -> Option<CpuSample> {
     let mut hits = 0;
     let mut last_sample = None;
 
     for _ in 0..samples {
-        if let Some(sample) = get_top_cpu() {
+        if let Some(sample) = get_top_cpu_excluding(exclude_pid) {
             if sample.cpu > threshold {
                 hits += 1;
                 last_sample = Some(sample);

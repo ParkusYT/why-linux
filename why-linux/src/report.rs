@@ -33,6 +33,9 @@ pub fn write_html_report(path: &str, samples: &[TimelineSample], summary_json: &
     .row {{ margin-bottom: 18px; }}
     .small {{ color: #666; font-size: 0.9em }}
     pre {{ background: #f6f8fa; padding: 12px; border-radius: 6px }}
+    table {{ border-collapse: collapse; width: 100%; margin-top: 8px; }}
+    th, td {{ text-align: left; padding: 6px 8px; border-bottom: 1px solid #e0e0e0; }}
+    th {{ background: #f2f4f7; }}
   </style>
 </head>
 <body>
@@ -55,11 +58,19 @@ pub fn write_html_report(path: &str, samples: &[TimelineSample], summary_json: &
   </div>
 
   <h3>Summary</h3>
+  <div id="summary-cards"></div>
+
+  <h3>Top offenders</h3>
+  <div id="offenders"></div>
+
+  <h3>Raw JSON</h3>
   <pre id="summary"></pre>
 
   <script>
     const samples = {samples_json};
-    const summary = {summary_json};
+    const data = {summary_json};
+    const summary = data.summary || Object();
+    const offenders = data.offenders || Object();
 
     function sparkline(values, el) {{
       const rect = el.getBoundingClientRect();
@@ -88,11 +99,55 @@ pub fn write_html_report(path: &str, samples: &[TimelineSample], summary_json: &
     const memSeries = samples.map(s=> s.mem ? s.mem.mem : 0);
     const diskSeries = samples.map(s=> s.disk ? s.disk.used_percent : 0);
 
+    function fmt(v) {{
+      return (typeof v === 'number' && isFinite(v)) ? v.toFixed(1) : '0.0';
+    }}
+
+    function renderSummary() {{
+      const el = document.getElementById('summary-cards');
+      if (!el || !summary) return;
+      const cpu = summary.cpu || Object();
+      const mem = summary.mem || Object();
+      const disk = summary.disk || Object();
+      el.innerHTML =
+        '<div class="row"><strong>CPU</strong>: avg ' + fmt(cpu.avg) + '% | max ' + fmt(cpu.max) + '%</div>' +
+        '<div class="row"><strong>Memory</strong>: avg ' + fmt(mem.avg) + '% | max ' + fmt(mem.max) + '% | system avg ' + fmt(mem.system_avg) + '% | system max ' + fmt(mem.system_max) + '%</div>' +
+        '<div class="row"><strong>Disk</strong>: avg ' + fmt(disk.avg) + '% | max ' + fmt(disk.max) + '%</div>';
+    }}
+
+    function renderOffenders() {{
+      const el = document.getElementById('offenders');
+      if (!el) return;
+      const cpu = offenders.cpu || [];
+      const mem = offenders.mem || [];
+      function rows(title, items) {{
+        if (!items.length) return '<div class="row"><strong>' + title + '</strong>: none</div>';
+        const list = items.map(i =>
+          '<tr>' +
+            '<td>' + i.name + '</td>' +
+            '<td>' + i.pid + '</td>' +
+            '<td>' + fmt(i.sum ?? 0) + '</td>' +
+            '<td>' + fmt(i.avg ?? 0) + '</td>' +
+            '<td>' + fmt(i.max ?? 0) + '</td>' +
+          '</tr>'
+        ).join('');
+        return '<div class="row"><strong>' + title + '</strong>' +
+          '<table>' +
+            '<thead><tr><th>Name</th><th>PID</th><th>Sum</th><th>Avg</th><th>Max</th></tr></thead>' +
+            '<tbody>' + list + '</tbody>' +
+          '</table>' +
+        '</div>';
+      }}
+      el.innerHTML = rows('CPU offenders', cpu) + rows('Memory offenders', mem);
+    }}
+
     document.addEventListener('DOMContentLoaded', function() {{
       sparkline(cpuSeries, document.getElementById('cpu'));
       sparkline(memSeries, document.getElementById('mem'));
       sparkline(diskSeries, document.getElementById('disk'));
-      document.getElementById('summary').textContent = JSON.stringify(summary, null, 2);
+      renderSummary();
+      renderOffenders();
+      document.getElementById('summary').textContent = JSON.stringify(data, null, 2);
     }});
   </script>
 </body>

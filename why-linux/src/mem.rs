@@ -35,7 +35,7 @@ fn get_system_mem_used_percent() -> Option<f32> {
     Some((used / total) * 100.0)
 }
 
-pub fn get_top_mem() -> Option<MemSample> {
+pub fn get_top_mem_excluding(exclude_pid: Option<u32>) -> Option<MemSample> {
     let output = std::process::Command::new("ps")
         .args(["-eo", "pid,comm,%mem", "--sort=-%mem"])
         .output()
@@ -45,32 +45,43 @@ pub fn get_top_mem() -> Option<MemSample> {
     let mut lines = stdout.lines();
     lines.next(); // skip header
 
-    let line = lines.next()?;
-    let mut parts = line.split_whitespace();
+    for line in lines {
+        let mut parts = line.split_whitespace();
+        let pid: u32 = parts.next()?.parse().ok()?;
+        let name = parts.next()?.to_string();
+        let mem: f32 = parts.next()?.parse().ok()?;
 
-    let pid: u32 = parts.next()?.parse().ok()?;
-    let name = parts.next()?.to_string();
-    let mem: f32 = parts.next()?.parse().ok()?;
+        if exclude_pid.is_some_and(|p| p == pid) {
+            continue;
+        }
 
-    // determine system usage too
-    let used_percent = get_system_mem_used_percent().unwrap_or(mem);
+        // determine system usage too
+        let used_percent = get_system_mem_used_percent().unwrap_or(mem);
 
-    Some(MemSample {
-        name,
-        pid,
-        mem,
-        used_percent,
-    })
+        return Some(MemSample {
+            name,
+            pid,
+            mem,
+            used_percent,
+        });
+    }
+
+    None
 }
 
-pub fn detect_sustained_high_mem(threshold: f32, samples: usize, min_hits: usize) -> Option<MemSample> {
+pub fn detect_sustained_high_mem(
+    threshold: f32,
+    samples: usize,
+    min_hits: usize,
+    exclude_pid: Option<u32>,
+) -> Option<MemSample> {
     let mut hits = 0;
     let mut last_sample = None;
 
     for _ in 0..samples {
         if let Some(sys_used) = get_system_mem_used_percent() {
             if sys_used > threshold {
-                if let Some(sample) = get_top_mem() {
+                if let Some(sample) = get_top_mem_excluding(exclude_pid) {
                     hits += 1;
                     last_sample = Some(sample);
                 }
