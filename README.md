@@ -43,6 +43,19 @@ Example checking disk with JSON output:
 cargo run --release -- --disk-threshold 85 --json
 ```
 
+I/O flags:
+
+- `--io-read-threshold <u64>` : Read bytes/sec considered high (default 5_000_000)
+- `--io-write-threshold <u64>` : Write bytes/sec considered high (default 5_000_000)
+- `--io-samples <usize>` : Number of 1s samples to collect for I/O (default 5)
+- `--io-min-hits <usize>` : Minimum high I/O hits to consider sustained (default 2)
+
+Example checking I/O with JSON output:
+
+```bash
+cargo run --release -- --io-read-threshold 2000000 --io-write-threshold 2000000 --json
+```
+
 CLI flags:
 
 - `--cpu-threshold <f32>` : CPU percent considered high (default 20.0)

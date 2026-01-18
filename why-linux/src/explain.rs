@@ -33,6 +33,18 @@ Mitigation:
 • move large files to another disk or expand the filesystem
 • consider adding separate partitions for var/tmp or adding more disk space",
 
+        "io" =>
+            "High disk I/O (read/write) can make systems feel very slow, even with free space.
+Common causes:
+• running backups, rsync, or large file copies
+• database or indexing workloads
+• log-heavy applications or runaway processes writing continuously
+
+Mitigation:
+• identify the process with high I/O and throttle or reschedule it
+• move heavy activity to off-peak times or faster storage
+• add io-weighting via cgroups/ionice to deprioritize background jobs",
+
         _ =>
             "Sustained high resource usage usually means a process is busy, leaking memory, or stuck.
 If this happens while idle, consider:

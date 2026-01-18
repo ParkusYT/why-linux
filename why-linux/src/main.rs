@@ -2,6 +2,7 @@ mod cpu;
 mod explain;
 mod mem;
 mod disk;
+mod io;
 
 use clap::Parser;
 use serde_json::json;
@@ -49,6 +50,22 @@ struct Args {
     #[arg(long, default_value_t = 2)]
     disk_min_hits: usize,
 
+    /// Read bytes/sec threshold to consider high (bytes/sec)
+    #[arg(long, default_value_t = 5_000_000)]
+    io_read_threshold: u64,
+
+    /// Write bytes/sec threshold to consider high (bytes/sec)
+    #[arg(long, default_value_t = 5_000_000)]
+    io_write_threshold: u64,
+
+    /// Number of samples (seconds) to collect for io
+    #[arg(long, default_value_t = 5)]
+    io_samples: usize,
+
+    /// Minimum high io hits to consider sustained
+    #[arg(long, default_value_t = 2)]
+    io_min_hits: usize,
+
     /// Output machine-readable JSON
     #[arg(short, long)]
     json: bool,
@@ -62,6 +79,7 @@ fn main() {
     let cpu_result = detect_sustained_high_cpu(args.cpu_threshold, args.cpu_samples, args.cpu_min_hits);
     let mem_result = detect_sustained_high_mem(args.mem_threshold, args.mem_samples, args.mem_min_hits);
     let disk_result = disk::detect_sustained_high_disk(args.disk_threshold, args.disk_samples, args.disk_min_hits);
+    let io_result = io::detect_sustained_high_io(args.io_read_threshold, args.io_write_threshold, args.io_samples, args.io_min_hits);
 
     if args.json {
         let mut out = json!({});
@@ -81,6 +99,12 @@ fn main() {
         if let Some(d) = disk_result {
             if let serde_json::Value::Object(ref mut map) = out {
                 map.insert("disk".to_string(), serde_json::to_value(&d).unwrap());
+            }
+        }
+
+        if let Some(io) = io_result {
+            if let serde_json::Value::Object(ref mut map) = out {
+                map.insert("io".to_string(), serde_json::to_value(&io).unwrap());
             }
         }
 
@@ -130,6 +154,21 @@ fn main() {
         }
         None => {
             println!("Disk usage looks normal.");
+        }
+    }
+
+    match io_result {
+        Some(sample) => {
+            println!(
+                "\nSustained high I/O detected:\n• {} (PID {}) – read {} B/s, write {} B/s\n",
+                sample.name, sample.pid, sample.read_bps, sample.write_bps
+            );
+
+            println!("Explanation:");
+            println!("{}", explain_process("io"));
+        }
+        None => {
+            println!("I/O looks normal.");
         }
     }
 }
