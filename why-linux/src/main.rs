@@ -1,46 +1,31 @@
-use std::process::Command;
-use std::thread::sleep;
-use std::time::Duration;
+mod cpu;
+mod explain;
 
-fn get_top_cpu() -> Option<(String, u32, f32)> {
-    let output = Command::new("ps")
-        .args(["-eo", "pid,comm,%cpu", "--sort=-%cpu"])
-        .output()
-        .ok()?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut lines = stdout.lines();
-    lines.next();
-
-    let line = lines.next()?;
-    let mut parts = line.split_whitespace();
-
-    let pid = parts.next()?.parse().ok()?;
-    let name = parts.next()?.to_string();
-    let cpu = parts.next()?.parse().ok()?;
-
-    Some((name, pid, cpu))
-}
+use cpu::detect_sustained_high_cpu;
+use explain::explain_process;
 
 fn main() {
-    let mut high_count = 0;
+    println!("Monitoring CPU usage...\n");
 
-    for _ in 0..5 {
-        if let Some((name, pid, cpu)) = get_top_cpu() {
-            if cpu > 20.0 {
-                high_count += 1;
-                println!("High CPU sample: {} (PID {}) - {:.1}%", name, pid, cpu);
-            }
+    // Detect sustained high CPU over time
+    let result = detect_sustained_high_cpu(
+        20.0, // CPU threshold (%)
+        5,    // total samples (seconds)
+        3,    // minimum high samples to consider sustained
+    );
+
+    match result {
+        Some(sample) => {
+            println!(
+                "Sustained high CPU usage detected:\n• {} (PID {}) – {:.1}% CPU\n",
+                sample.name, sample.pid, sample.cpu
+            );
+
+            println!("Explanation:");
+            println!("{}", explain_process(&sample.name));
         }
-
-        sleep(Duration::from_secs(1));
-    }
-
-    if high_count >= 3 {
-        println!("\nSustained high CPU usage detected.");
-        println!("This usually means an application is stuck or very busy.");
-        println!("If this happens while idle, it may be a bug or runaway task.");
-    } else {
-        println!("\nCPU usage looks normal.");
+        None => {
+            println!("CPU usage looks normal.");
+        }
     }
 }
