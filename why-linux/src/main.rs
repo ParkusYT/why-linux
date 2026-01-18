@@ -3,6 +3,7 @@ mod explain;
 mod mem;
 mod disk;
 mod io;
+mod report;
 
 use clap::Parser;
 use serde_json::json;
@@ -10,6 +11,7 @@ use serde_json::json;
 use cpu::detect_sustained_high_cpu;
 use explain::explain_process;
 use mem::detect_sustained_high_mem;
+use report::{TimelineSample, write_html_report};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Monitor sustained CPU and memory usage")]
@@ -69,6 +71,10 @@ struct Args {
     /// Output machine-readable JSON
     #[arg(short, long)]
     json: bool,
+
+    /// Write an HTML timeline report to the given path (optional)
+    #[arg(long)]
+    report: Option<String>,
 }
 
 fn main() {
@@ -94,7 +100,8 @@ fn main() {
     let io_samples = args.io_samples;
     let io_min_hits = args.io_min_hits;
 
-    // Run checks in parallel to avoid serial sleeps adding up.
+    // Start parallel detectors (they still sample internally) and also collect per-second
+    // timeline samples for the maximum of the configured sample windows so the report has data.
     let cpu_handle = std::thread::spawn(move || {
         detect_sustained_high_cpu(cpu_threshold, cpu_samples, cpu_min_hits)
     });
@@ -110,6 +117,18 @@ fn main() {
     let io_handle = std::thread::spawn(move || {
         io::detect_sustained_high_io(io_read_threshold, io_write_threshold, io_samples, io_min_hits)
     });
+
+    // collect per-second samples for timeline (duration = max configured samples)
+    let duration = *[cpu_samples, mem_samples, disk_samples, io_samples].iter().max().unwrap_or(&1);
+    let mut timeline: Vec<TimelineSample> = Vec::with_capacity(duration);
+    for _ in 0..duration {
+        let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let cpu = cpu::get_top_cpu();
+        let mem = mem::get_top_mem();
+        let disk = disk::get_top_mount_usage();
+        timeline.push(TimelineSample { ts, cpu, mem, disk });
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 
     // Join results (if a thread panics we treat as no result)
     let cpu_result = cpu_handle.join().ok().flatten();
@@ -145,10 +164,16 @@ fn main() {
         }
 
         println!("{}", serde_json::to_string_pretty(&out).unwrap());
+        if let Some(path) = args.report.as_ref() {
+            // include JSON findings in the report
+            let summary_json = serde_json::to_string_pretty(&out).unwrap();
+            let _ = write_html_report(path, &timeline, &summary_json);
+        }
+
         return;
     }
 
-    match cpu_result {
+    match cpu_result.as_ref() {
         Some(sample) => {
             println!(
                 "Sustained high CPU usage detected:\n• {} (PID {}) – {:.1}% CPU\n",
@@ -163,7 +188,7 @@ fn main() {
         }
     }
 
-    match mem_result {
+    match mem_result.as_ref() {
         Some(sample) => {
             println!(
                 "\nSustained high memory usage detected:\n• {} (PID {}) – {:.1}% mem (system {:.1}%)\n",
@@ -178,7 +203,7 @@ fn main() {
         }
     }
 
-    match disk_result {
+    match disk_result.as_ref() {
         Some(sample) => {
             println!(
                 "\nSustained high disk usage detected:\n• {} mounted on {} – {:.1}% used\n",
@@ -193,7 +218,7 @@ fn main() {
         }
     }
 
-    match io_result {
+    match io_result.as_ref() {
         Some(sample) => {
             println!(
                 "\nSustained high I/O detected:\n• {} (PID {}) – read {} B/s, write {} B/s\n",
@@ -205,6 +230,20 @@ fn main() {
         }
         None => {
             println!("I/O looks normal.");
+        }
+    }
+
+    if let Some(path) = args.report.as_ref() {
+        let mut out = json!({});
+        if let Some(c) = cpu_result { if let serde_json::Value::Object(ref mut map) = out { map.insert("cpu".to_string(), serde_json::to_value(&c).unwrap()); } }
+        if let Some(m) = mem_result { if let serde_json::Value::Object(ref mut map) = out { map.insert("mem".to_string(), serde_json::to_value(&m).unwrap()); } }
+        if let Some(d) = disk_result { if let serde_json::Value::Object(ref mut map) = out { map.insert("disk".to_string(), serde_json::to_value(&d).unwrap()); } }
+        if let Some(i) = io_result { if let serde_json::Value::Object(ref mut map) = out { map.insert("io".to_string(), serde_json::to_value(&i).unwrap()); } }
+
+        let summary_json = serde_json::to_string_pretty(&out).unwrap();
+        match write_html_report(path, &timeline, &summary_json) {
+            Ok(()) => println!("Wrote HTML report to {}", path),
+            Err(e) => eprintln!("Failed to write report: {}", e),
         }
     }
 }
