@@ -1,52 +1,38 @@
 # why-linux
 
-`why-linux` is a tiny CLI tool to help spot sustained system resource problems on Linux.
+`why-linux` is a small Linux CLI to spot sustained resource pressure and show the top offenders.
 
-Features added:
-- Detect sustained high CPU usage and show the top offending process.
-- Detect sustained high memory usage and show the top memory-consuming process.
-
-Quick run:
+## Quick start
 
 ```bash
 cd why-linux
 cargo run --release
 ```
 
-The defaults check CPU >20% and memory >80% over a short sampling window.
-
-CLI flags (simplified):
-
-- `--duration <u64>` : Total sampling duration in seconds (default 10)
-- `--interval <u64>` : Sampling interval in seconds (default 1)
-- `--cpu-threshold <f32>` : CPU percent considered high (default 20.0)
-- `--mem-threshold <f32>` : System memory percent considered high (default 80.0)
-- `--disk-threshold <f32>` : Filesystem percent considered high (default 90.0)
-- `--io-read-threshold <u64>` : Read bytes/sec considered high (default 5_000_000)
-- `--io-write-threshold <u64>` : Write bytes/sec considered high (default 5_000_000)
-- `-j, --json` : Output findings as pretty JSON
-- `--report <path>` : Write HTML report to path
-
-Example:
+## Common usage
 
 ```bash
-cargo run --release -- --cpu-threshold 25 --mem-threshold 75 --json
+# sample for 10s at 1s intervals (default)
+cargo run --release --
+
+# custom duration + interval
+cargo run --release -- --duration 20 --interval 2
+
+# JSON output
+cargo run --release -- --json
+
+# HTML report
+cargo run --release -- --report /tmp/why-linux-report.html
 ```
 
-Example checking disk with JSON output:
+## Flags
 
-```bash
-cargo run --release -- --disk-threshold 85 --json
-```
-
-Example checking I/O with JSON output:
-
-```bash
-cargo run --release -- --io-read-threshold 2000000 --io-write-threshold 2000000 --json
-```
-
-Example with custom duration/interval:
-
-```bash
-cargo run --release -- --duration 20 --interval 2 --json
-```
+- `--duration <u64>`: total sampling duration in seconds (default 10)
+- `--interval <u64>`: sampling interval in seconds (default 1)
+- `--cpu-threshold <f32>`: CPU percent considered high (default 20.0)
+- `--mem-threshold <f32>`: system memory percent considered high (default 80.0)
+- `--disk-threshold <f32>`: filesystem percent considered high (default 90.0)
+- `--io-read-threshold <u64>`: read bytes/sec considered high (default 5_000_000)
+- `--io-write-threshold <u64>`: write bytes/sec considered high (default 5_000_000)
+- `-j, --json`: print machine-readable JSON
+- `--report <path>`: write a self-contained HTML report
