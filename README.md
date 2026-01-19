@@ -36,3 +36,25 @@ cargo run --release -- --report /tmp/why-linux-report.html
 - `--io-write-threshold <u64>`: write bytes/sec considered high (default 5_000_000)
 - `-j, --json`: print machine-readable JSON
 - `--report <path>`: write a self-contained HTML report
+
+## Releases
+
+To publish binaries for Linux x86_64 and aarch64:
+
+1. Create a version tag and push it:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+2. GitHub Actions builds and uploads:
+
+- `why-linux-x86_64-unknown-linux-gnu.tar.gz`
+- `why-linux-aarch64-unknown-linux-gnu.tar.gz`
+
+Each release also includes a `.sha256` file for verification:
+
+```bash
+sha256sum -c why-linux-x86_64-unknown-linux-gnu.tar.gz.sha256
+```
