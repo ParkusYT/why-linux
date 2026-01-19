@@ -54,6 +54,7 @@ pub fn detect_sustained_high_io(
     write_threshold: u64,
     samples: usize,
     min_hits: usize,
+    interval_secs: u64,
 ) -> Option<IoSample> {
     let mut hits: HashMap<u32, usize> = HashMap::new();
     let mut last_values: HashMap<u32, (u64, u64)> = HashMap::new();
@@ -92,7 +93,7 @@ pub fn detect_sustained_high_io(
             }
         }
 
-        sleep(Duration::from_secs(1));
+        sleep(Duration::from_secs(interval_secs));
 
         // snapshot t1 and compute deltas for candidates
         for pid in &candidates {

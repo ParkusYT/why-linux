@@ -73,6 +73,7 @@ pub fn detect_sustained_high_mem(
     threshold: f32,
     samples: usize,
     min_hits: usize,
+    interval_secs: u64,
     exclude_pid: Option<u32>,
 ) -> Option<MemSample> {
     let mut hits = 0;
@@ -88,7 +89,7 @@ pub fn detect_sustained_high_mem(
             }
         }
 
-        sleep(Duration::from_secs(1));
+        sleep(Duration::from_secs(interval_secs));
     }
 
     if hits >= min_hits {

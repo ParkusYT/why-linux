@@ -47,7 +47,12 @@ pub fn get_top_mount_usage() -> Option<DiskSample> {
     best
 }
 
-pub fn detect_sustained_high_disk(threshold: f32, samples: usize, min_hits: usize) -> Option<DiskSample> {
+pub fn detect_sustained_high_disk(
+    threshold: f32,
+    samples: usize,
+    min_hits: usize,
+    interval_secs: u64,
+) -> Option<DiskSample> {
     let mut hits = 0;
     let mut last = None;
 
@@ -59,7 +64,7 @@ pub fn detect_sustained_high_disk(threshold: f32, samples: usize, min_hits: usiz
             }
         }
 
-        sleep(Duration::from_secs(1));
+        sleep(Duration::from_secs(interval_secs));
     }
 
     if hits >= min_hits {

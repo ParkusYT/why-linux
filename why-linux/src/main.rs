@@ -84,41 +84,27 @@ fn top_offenders(map: &HashMap<u32, OffenderStats>, limit: usize) -> Vec<Offende
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Monitor sustained CPU and memory usage")]
 struct Args {
+    /// Total duration to sample (seconds)
+    #[arg(long, default_value_t = 10)]
+    duration: u64,
+
+    /// Sampling interval (seconds)
+    #[arg(long, default_value_t = 1)]
+    interval: u64,
+
     /// CPU threshold percentage to consider high
     #[arg(long, default_value_t = 20.0)]
     cpu_threshold: f32,
-
-    /// Number of samples (seconds) to collect for CPU
-    #[arg(long, default_value_t = 5)]
-    cpu_samples: usize,
-
-    /// Minimum high CPU hits to consider sustained
-    #[arg(long, default_value_t = 3)]
-    cpu_min_hits: usize,
 
     /// System memory used percent threshold
     #[arg(long, default_value_t = 80.0)]
     mem_threshold: f32,
 
-    /// Number of samples (seconds) to collect for memory
-    #[arg(long, default_value_t = 5)]
-    mem_samples: usize,
-
-    /// Minimum high memory hits to consider sustained
-    #[arg(long, default_value_t = 2)]
-    mem_min_hits: usize,
 
     /// Disk usage percent threshold to consider high
     #[arg(long, default_value_t = 90.0)]
     disk_threshold: f32,
 
-    /// Number of samples (seconds) to collect for disk
-    #[arg(long, default_value_t = 5)]
-    disk_samples: usize,
-
-    /// Minimum high disk hits to consider sustained
-    #[arg(long, default_value_t = 2)]
-    disk_min_hits: usize,
 
     /// Read bytes/sec threshold to consider high (bytes/sec)
     #[arg(long, default_value_t = 5_000_000)]
@@ -128,13 +114,6 @@ struct Args {
     #[arg(long, default_value_t = 5_000_000)]
     io_write_threshold: u64,
 
-    /// Number of samples (seconds) to collect for io
-    #[arg(long, default_value_t = 5)]
-    io_samples: usize,
-
-    /// Minimum high io hits to consider sustained
-    #[arg(long, default_value_t = 2)]
-    io_min_hits: usize,
 
     /// Output machine-readable JSON
     #[arg(short, long)]
@@ -152,55 +131,45 @@ fn main() {
     let self_pid = std::process::id();
 
     // Extract needed args so we can move them into threads.
+    let duration = args.duration.max(1);
+    let interval = args.interval.max(1);
+    let samples = (duration / interval).max(1) as usize;
+    let min_hits = (samples / 2).max(1);
+
     let cpu_threshold = args.cpu_threshold;
-    let cpu_samples = args.cpu_samples;
-    let cpu_min_hits = args.cpu_min_hits;
-
     let mem_threshold = args.mem_threshold;
-    let mem_samples = args.mem_samples;
-    let mem_min_hits = args.mem_min_hits;
-
     let disk_threshold = args.disk_threshold;
-    let disk_samples = args.disk_samples;
-    let disk_min_hits = args.disk_min_hits;
-
     let io_read_threshold = args.io_read_threshold;
     let io_write_threshold = args.io_write_threshold;
-    let io_samples = args.io_samples;
-    let io_min_hits = args.io_min_hits;
 
     // Start parallel detectors (they still sample internally) and also collect per-second
     // timeline samples for the maximum of the configured sample windows so the report has data.
     let cpu_handle = std::thread::spawn(move || {
-        detect_sustained_high_cpu(cpu_threshold, cpu_samples, cpu_min_hits, Some(self_pid))
+        detect_sustained_high_cpu(cpu_threshold, samples, min_hits, interval, Some(self_pid))
     });
 
     let mem_handle = std::thread::spawn(move || {
-        detect_sustained_high_mem(mem_threshold, mem_samples, mem_min_hits, Some(self_pid))
+        detect_sustained_high_mem(mem_threshold, samples, min_hits, interval, Some(self_pid))
     });
 
     let disk_handle = std::thread::spawn(move || {
-        disk::detect_sustained_high_disk(disk_threshold, disk_samples, disk_min_hits)
+        disk::detect_sustained_high_disk(disk_threshold, samples, min_hits, interval)
     });
 
     let io_handle = std::thread::spawn(move || {
-        io::detect_sustained_high_io(io_read_threshold, io_write_threshold, io_samples, io_min_hits)
+        io::detect_sustained_high_io(io_read_threshold, io_write_threshold, samples, min_hits, interval)
     });
 
     // collect per-second samples for timeline (duration = max configured samples)
-    let duration = *[cpu_samples, mem_samples, disk_samples, io_samples]
-        .iter()
-        .max()
-        .unwrap_or(&1);
-    let mut timeline: Vec<TimelineSample> = Vec::with_capacity(duration);
-    let mut cpu_values: Vec<f32> = Vec::with_capacity(duration);
-    let mut mem_values: Vec<f32> = Vec::with_capacity(duration);
-    let mut mem_used_values: Vec<f32> = Vec::with_capacity(duration);
-    let mut disk_values: Vec<f32> = Vec::with_capacity(duration);
+    let mut timeline: Vec<TimelineSample> = Vec::with_capacity(samples);
+    let mut cpu_values: Vec<f32> = Vec::with_capacity(samples);
+    let mut mem_values: Vec<f32> = Vec::with_capacity(samples);
+    let mut mem_used_values: Vec<f32> = Vec::with_capacity(samples);
+    let mut disk_values: Vec<f32> = Vec::with_capacity(samples);
     let mut cpu_offenders: HashMap<u32, OffenderStats> = HashMap::new();
     let mut mem_offenders: HashMap<u32, OffenderStats> = HashMap::new();
 
-    for _ in 0..duration {
+    for _ in 0..samples {
         let ts = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -232,7 +201,7 @@ fn main() {
         }
 
         timeline.push(TimelineSample { ts, cpu, mem, disk });
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::thread::sleep(std::time::Duration::from_secs(interval));
     }
 
     let summary = json!({
